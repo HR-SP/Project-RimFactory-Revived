@@ -140,6 +140,7 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
             Scribe_Collections.Look(ref thingQueue, "thingQueue", LookMode.Deep);
             Scribe_Values.Look(ref allowForbidden, "allowForbidden");
             Scribe_Deep.Look(ref buildingPawn, "buildingPawn");
+            Scribe_Values.Look(ref currentPower, "currentPowerUsage");
         }
         public override IEnumerable<Gizmo> GetGizmos()
         {
@@ -232,6 +233,13 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
         protected IEnumerable<Bill> AllBillsShouldDoNow => from b in billStack.Bills
                                                            where b.ShouldDoNow()
                                                            select b;
+
+        private float defaultPower;
+        private float idlePower = 10f;
+        private float scanningPower = 30f;
+
+        private float currentPower;
+
         public override void Tick()
         {
             base.Tick();
@@ -274,7 +282,29 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
                         Notify_BillStarted();
                     }
                 }
+
+                // Power
+                CompPowerTrader powerTrader = this.TryGetComp<CompPowerTrader>();
+                if (powerTrader != null) {
+                    if (currentBillReport != null)
+                    {
+                        powerTrader.PowerOutput = this.defaultPower;
+                    }
+                    else
+                    {
+                        if (this.BillStack.AnyShouldDoNow)
+                        {
+                            powerTrader.PowerOutput = this.scanningPower;
+                        }
+                        else
+                        {
+                            powerTrader.PowerOutput = this.idlePower;
+                        }
+                    }
+                    currentPower = powerTrader.PowerOutput;
+                }
             }
+
             // Effect.
             if (currentBillReport != null)
             {
