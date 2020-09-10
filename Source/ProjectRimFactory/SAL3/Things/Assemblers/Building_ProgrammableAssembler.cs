@@ -131,6 +131,7 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
         public Building_ProgrammableAssembler()
         {
             billStack = new BillStack(this);
+
         }
         public override void ExposeData()
         {
@@ -140,8 +141,10 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
             Scribe_Collections.Look(ref thingQueue, "thingQueue", LookMode.Deep);
             Scribe_Values.Look(ref allowForbidden, "allowForbidden");
             Scribe_Deep.Look(ref buildingPawn, "buildingPawn");
+            Scribe_Values.Look(ref defaultPower, "defaultPower");
             Scribe_Values.Look(ref currentPower, "currentPowerUsage");
         }
+
         public override IEnumerable<Gizmo> GetGizmos()
         {
             foreach (Gizmo g in base.GetGizmos())
@@ -209,6 +212,8 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
             this.compPowerTrader = GetComp<CompPowerTrader>();
             this.compRefuelable  = GetComp<CompRefuelable>();
 
+            defaultPower = BasePowerUtil.getDefaultPower(this);
+
             //Assign Pawn's mapIndexOrState to building's mapIndexOrState
             ReflectionUtility.mapIndexOrState.SetValue(buildingPawn, ReflectionUtility.mapIndexOrState.GetValue(this));
             //Assign Pawn's position without nasty errors
@@ -234,73 +239,81 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
                                                            where b.ShouldDoNow()
                                                            select b;
 
-        private float defaultPower;
-        private float idlePower = 10f;
-        private float scanningPower = 30f;
-
-        private float currentPower;
+        protected float defaultPower;
+        protected float currentPower;
 
         public override void Tick()
         {
             base.Tick();
-            if (this.IsHashIntervalTick(10) && Active)
+            if (this.IsHashIntervalTick(10))
             {
+                if (Active)
+                {
 
-                if (thingQueue.Count > 0 && OutputComp.CurrentCell.Walkable(Map) &&
-                    (OutputComp.CurrentCell.GetFirstItem(Map)?.TryAbsorbStack(thingQueue[0], true) ?? GenPlace.TryPlaceThing(thingQueue[0], OutputComp.CurrentCell, Map, ThingPlaceMode.Direct)))
-                {
-                    thingQueue.RemoveAt(0);
-                }
-                if (currentBillReport != null)
-                {
-                    //Update the Required Work
-                    currentBillReport.workLeft -= 10f * ProductionSpeedFactor * (this.TryGetComp<CompPowerWorkSetting>()?.GetSpeedFactor() ?? 1f);
-                    //If Work Finished
-                    if (currentBillReport.workLeft <= 0)
+                    if (thingQueue.Count > 0 && OutputComp.CurrentCell.Walkable(Map) &&
+                        (OutputComp.CurrentCell.GetFirstItem(Map)?.TryAbsorbStack(thingQueue[0], true) ?? GenPlace.TryPlaceThing(thingQueue[0], OutputComp.CurrentCell, Map, ThingPlaceMode.Direct)))
                     {
-                        try
+                        thingQueue.RemoveAt(0);
+                    }
+                    if (currentBillReport != null)
+                    {
+                        //Update the Required Work
+                        currentBillReport.workLeft -= 10f * ProductionSpeedFactor * (this.TryGetComp<CompPowerWorkSetting>()?.GetSpeedFactor() ?? 1f);
+                        //If Work Finished
+                        if (currentBillReport.workLeft <= 0)
                         {
-                            ProduceItems();
-                            currentBillReport.bill.Notify_IterationCompleted(buildingPawn, currentBillReport.selected);
-                            Notify_RecipeCompleted(currentBillReport.bill.recipe);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error($"Error producing items for {GetUniqueLoadID()}: " + ex);
-                        }
-                        finally
-                        {
-                            currentBillReport = null;
+                            try
+                            {
+                                ProduceItems();
+                                currentBillReport.bill.Notify_IterationCompleted(buildingPawn, currentBillReport.selected);
+                                Notify_RecipeCompleted(currentBillReport.bill.recipe);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error($"Error producing items for {GetUniqueLoadID()}: " + ex);
+                            }
+                            finally
+                            {
+                                currentBillReport = null;
+                            }
                         }
                     }
-                }
-                else if (this.IsHashIntervalTick(60))
-                {
-                    //Start Bill if Possible
-                    if ((currentBillReport = TryGetNextBill()) != null)
+                    else if (this.IsHashIntervalTick(60))
                     {
-                        Notify_BillStarted();
+                        //Start Bill if Possible
+                        if ((currentBillReport = TryGetNextBill()) != null)
+                        {
+                            Notify_BillStarted();
+                        }
                     }
                 }
 
                 // Power
                 CompPowerTrader powerTrader = this.TryGetComp<CompPowerTrader>();
-                if (powerTrader != null) {
-                    if (currentBillReport != null)
+                if (powerTrader != null)
+                {
+                    if (Active)
                     {
-                        powerTrader.PowerOutput = this.defaultPower;
-                    }
-                    else
-                    {
-                        if (this.BillStack.AnyShouldDoNow)
+                        if (currentBillReport != null)
                         {
-                            powerTrader.PowerOutput = this.scanningPower;
+                            SetDefaultPower(powerTrader);
                         }
                         else
                         {
-                            powerTrader.PowerOutput = this.idlePower;
+                            if (this.BillStack.AnyShouldDoNow)
+                            {
+                                powerTrader.PowerOutput = BasePowerUtil.scanningPower;
+                            }
+                            else
+                            {
+                                powerTrader.PowerOutput = BasePowerUtil.idlePower;
+                            }
                         }
+                    } else
+                    {
+                        SetDefaultPower(powerTrader);
                     }
+
                     currentPower = powerTrader.PowerOutput;
                 }
             }
@@ -342,6 +355,29 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
                 }
             }
         }
+
+
+        private void SetDefaultPower(CompPowerTrader powerTrader)
+        {
+            try
+            {
+                var cpws = this.TryGetComp<CompPowerWorkSetting>();
+                if (cpws != null)
+                {
+                    cpws.RefreshPowerStatus();
+                }
+                else
+                {
+                    powerTrader.PowerOutput = this.defaultPower;
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error(e.Message);
+                Log.Error(e.StackTrace);
+            }
+        }
+
         // TryGetNextBill returns a new BillReport to start if one is available
         protected BillReport TryGetNextBill()
         {
@@ -380,7 +416,7 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers
             IEnumerable<Thing> products = GenRecipe.MakeRecipeProducts(currentBillReport.bill.recipe, buildingPawn, currentBillReport.selected, ProjectSAL_Utilities.CalculateDominantIngredient(currentBillReport.bill.recipe, currentBillReport.selected), this);
             foreach (Thing thing in products)
             {
-                PostProcessRecipeProduct(thing);
+ //               PostProcessRecipeProduct(thing);
                 thingQueue.Add(thing);
             }
             for (int i = 0; i < currentBillReport.selected.Count; i++)
