@@ -17,6 +17,9 @@ namespace ProjectRimFactory.SAL3.Things
         protected RecipeDef workingRecipe;
         protected float workAmount;
         public List<RecipeDef> recipes = new List<RecipeDef>();
+
+        private float defaultPower;
+
         //================================ Misc
         public IEnumerable<Building_WorkTable> Tables => from IntVec3 cell in this.GetComp<CompRecipeImportRange>()?.RangeCells() ?? GenAdj.CellsAdjacent8Way(this)
                                                          from Thing t in cell.GetThingList(Map)
@@ -88,6 +91,13 @@ namespace ProjectRimFactory.SAL3.Things
             }
         }
 
+        public override void SpawnSetup(Map map, bool respawningAfterLoad)
+        {
+            base.SpawnSetup(map, respawningAfterLoad);
+
+            defaultPower = BasePowerUtil.getDefaultPower(this);
+        }
+
         List<FloatMenuOption> GetDebugOptions()
         {
             List<FloatMenuOption> list = new List<FloatMenuOption>
@@ -139,14 +149,24 @@ namespace ProjectRimFactory.SAL3.Things
 
         public override void Tick()
         {
-            if (this.IsHashIntervalTick(60) && GetComp<CompPowerTrader>()?.PowerOn != false && workingRecipe != null)
+            CompPowerTrader powerTrader = GetComp<CompPowerTrader>();
+            if (this.IsHashIntervalTick(60) && GetComp<CompPowerTrader>()?.PowerOn != false)
             {
-                workAmount -= 60f;
-                if (workAmount < 0)
+                if (workingRecipe != null)
                 {
-                    // Encode recipe
-                    recipes.Add(workingRecipe);
-                    ResetProgress();
+                    powerTrader.PowerOutput = defaultPower;
+                    workAmount -= 60f;
+                    if (workAmount < 0)
+                    {
+                        // Encode recipe
+                        recipes.Add(workingRecipe);
+                        ResetProgress();
+                        powerTrader.PowerOutput = BasePowerUtil.scanningPower;
+                    }
+                }
+                else
+                {
+                    powerTrader.PowerOutput = BasePowerUtil.scanningPower;
                 }
             }
             base.Tick();
