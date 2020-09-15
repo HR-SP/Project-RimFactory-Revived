@@ -51,12 +51,12 @@ namespace ProjectRimFactory.SAL3.Things.Assemblers.Special
             return (QualityCategory)((int)num);
         }
         protected override void PostProcessRecipeProduct(Thing thing)
-        {/*
+        {
             CompQuality compQuality = thing.TryGetComp<CompQuality>();
             if (compQuality != null)
             {
                 compQuality.SetQuality(GetRandomProductionQuality(), ArtGenerationContext.Colony);
-            }*/
+            }
         }
         protected override IEnumerable<FloatMenuOption> GetDebugOptions()
         {
